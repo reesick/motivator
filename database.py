@@ -1,114 +1,119 @@
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import asyncio
+import asyncpg
 from dotenv import load_dotenv
 from datetime import datetime
+from urllib.parse import urlparse
 
 load_dotenv()
 
-def get_connection():
-    """Create database connection"""
-    return psycopg2.connect(
-        os.getenv("SUPABASE_URL"),
-        cursor_factory=RealDictCursor
-    )
+async def get_connection():
+    """Create async database connection"""
+    url = os.getenv("SUPABASE_URL")
+    return await asyncpg.connect(url)
 
-def get_thought_base():
+async def get_thought_base():
     """Get the latest thought base content"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT content FROM thought_base ORDER BY updated_at DESC LIMIT 1")
-        result = cur.fetchone()
+        result = await conn.fetchrow("SELECT content FROM thought_base ORDER BY updated_at DESC LIMIT 1")
         return result['content'] if result else "You are motivated by personal growth."
     finally:
-        conn.close()
+        await conn.close()
 
-def update_thought_base(new_content):
+async def update_thought_base(new_content):
     """Update the thought base content"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE thought_base SET content = %s, updated_at = %s WHERE id = %s",
-            (new_content, datetime.now(), get_thought_base_id())
+        base_id = await get_thought_base_id()
+        await conn.execute(
+            "UPDATE thought_base SET content = $1, updated_at = $2 WHERE id = $3",
+            new_content, datetime.now(), base_id
         )
-        conn.commit()
     finally:
-        conn.close()
+        await conn.close()
 
-def get_thought_base_id():
+async def get_thought_base_id():
     """Get the ID of the current thought base"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM thought_base ORDER BY updated_at DESC LIMIT 1")
-        result = cur.fetchone()
+        result = await conn.fetchrow("SELECT id FROM thought_base ORDER BY updated_at DESC LIMIT 1")
         return result['id'] if result else None
     finally:
-        conn.close()
+        await conn.close()
 
-def save_thought_history(thought_text, source_snapshot):
+async def save_thought_history(thought_text, source_snapshot):
     """Save a new thought to history"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO thought_history (thought_text, source_snapshot, date_sent) VALUES (%s, %s, %s) RETURNING id",
-            (thought_text, source_snapshot, datetime.now())
+        result = await conn.fetchrow(
+            "INSERT INTO thought_history (thought_text, source_snapshot, date_sent) VALUES ($1, $2, $3) RETURNING id",
+            thought_text, source_snapshot, datetime.now()
         )
-        result = cur.fetchone()
-        conn.commit()
         return result['id']
     finally:
-        conn.close()
+        await conn.close()
 
-def get_all_thoughts():
+async def get_all_thoughts():
     """Get all previous thoughts for duplicate checking"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT thought_text FROM thought_history")
-        results = cur.fetchall()
+        results = await conn.fetch("SELECT thought_text FROM thought_history")
         return [row['thought_text'] for row in results]
     finally:
-        conn.close()
+        await conn.close()
 
-def update_rating(thought_id, rating):
+async def update_rating(thought_id, rating):
     """Update rating for a specific thought"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE thought_history SET rating = %s WHERE id = %s",
-            (rating, thought_id)
+        await conn.execute(
+            "UPDATE thought_history SET rating = $1 WHERE id = $2",
+            rating, thought_id
         )
-        conn.commit()
     finally:
-        conn.close()
+        await conn.close()
 
-def get_today_thought_id():
+async def get_today_thought_id():
     """Get today's thought ID"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
         today = datetime.now().strftime("%Y-%m-%d")
-        cur.execute(
-            "SELECT id FROM thought_history WHERE date_sent::date = %s ORDER BY date_sent DESC LIMIT 1",
-            (today,)
+        result = await conn.fetchrow(
+            "SELECT id FROM thought_history WHERE date_sent::date = $1 ORDER BY date_sent DESC LIMIT 1",
+            today
         )
-        result = cur.fetchone()
         return result['id'] if result else None
     finally:
-        conn.close()
+        await conn.close()
 
-def get_thought_by_id(thought_id):
+async def get_thought_by_id(thought_id):
     """Get thought text by ID"""
-    conn = get_connection()
+    conn = await get_connection()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT thought_text FROM thought_history WHERE id = %s", (thought_id,))
-        result = cur.fetchone()
+        result = await conn.fetchrow("SELECT thought_text FROM thought_history WHERE id = $1", thought_id)
         return result['thought_text'] if result else ""
     finally:
-        conn.close()
+        await conn.close()
+
+# Sync wrappers for non-async code
+def get_thought_base_sync():
+    return asyncio.run(get_thought_base())
+
+def update_thought_base_sync(new_content):
+    return asyncio.run(update_thought_base(new_content))
+
+def save_thought_history_sync(thought_text, source_snapshot):
+    return asyncio.run(save_thought_history(thought_text, source_snapshot))
+
+def get_all_thoughts_sync():
+    return asyncio.run(get_all_thoughts())
+
+def update_rating_sync(thought_id, rating):
+    return asyncio.run(update_rating(thought_id, rating))
+
+def get_today_thought_id_sync():
+    return asyncio.run(get_today_thought_id())
+
+def get_thought_by_id_sync(thought_id):
+    return asyncio.run(get_thought_by_id(thought_id))

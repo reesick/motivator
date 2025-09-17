@@ -4,6 +4,23 @@ from dotenv import load_dotenv
 from telegram.ext import Application, MessageHandler, filters
 import google.generativeai as genai
 from database import get_today_thought_id, update_rating, get_thought_base, update_thought_base, get_thought_by_id
+from database import get_today_thought_id_sync, update_rating_sync, get_thought_base_sync, update_thought_base_sync, get_thought_by_id_sync
+
+async def handle_message(update, context):
+    # ... existing code until rating section
+    
+    if len(numbers) == 1 and len(text.split()) <= 2:
+        rating = int(numbers[0])
+        thought_id = get_today_thought_id_sync()
+        if thought_id:
+            update_rating_sync(thought_id, rating)
+            thought_text = get_thought_by_id_sync(thought_id)
+            current_base = get_thought_base_sync()
+            # ... rest of logic
+            updated_base = current_base + " " + new_line
+            update_thought_base_sync(updated_base)
+    
+    # Same for story section - use sync versions
 
 load_dotenv()
 
